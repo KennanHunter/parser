@@ -32,13 +32,14 @@ pub enum Expression {
     NonTerminal(NonTerminal),
 }
 
-// pub enum StackValue<'a> {
-//     Tree {
-//         head: NonTerminal,
-//         values: &'a StackValue<'a>,
-//     },
-//     Nonterminal(NonTerminal),
-// }
+#[derive(Debug, Clone)]
+pub enum StackValue {
+    Tree {
+        head: NonTerminal,
+        values: Vec<StackValue>,
+    },
+    Terminal(Terminal),
+}
 
 impl fmt::Display for NonTerminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -123,7 +124,7 @@ impl Parser {
             })
             .collect();
 
-        let mut stack: Vec<Expression> = vec![];
+        let mut stack: Vec<StackValue> = vec![];
 
         while let Some(token) = tokens.next() {
             let terminal = loop {
@@ -134,14 +135,23 @@ impl Parser {
                             return None;
                         }
 
-                        let comp: Vec<(&Expression, &Expression)> =
+                        let comp: Vec<(&StackValue, &Expression)> =
                             Iterator::zip(stack.iter(), rhs.iter()).collect();
 
                         // println!(
                         //     "==\nChecking if the following comparison:\n {comp:#?} can be replaced with {nt}\n"
                         // );
 
-                        if comp.iter().all(|(left, right)| left == right) {
+                        if comp.iter().all(|(left, right)| match (left, right) {
+                            (
+                                StackValue::Tree { head, values: _ },
+                                Expression::NonTerminal(non_terminal),
+                            ) => head == non_terminal,
+                            (StackValue::Terminal(left), Expression::Terminal(right)) => {
+                                left == right
+                            }
+                            _ => false,
+                        }) {
                             Some((rhs.len(), nt.clone()))
                         } else {
                             None
@@ -172,29 +182,30 @@ impl Parser {
                     break token;
                 };
 
-                let old = stack.drain(stack.len().saturating_sub(*len)..);
+                let old = stack
+                    .drain(stack.len().saturating_sub(*len)..)
+                    .as_slice()
+                    .to_owned();
 
-                println!(
-                    "Replacing stack values {:?} with nonterminal {nt}",
-                    old.as_slice()
-                );
+                println!("Replacing stack values {old:?} with nonterminal {nt}");
 
-                drop(old);
-
-                stack.push(Expression::NonTerminal(nt.clone()));
+                stack.push(StackValue::Tree {
+                    head: nt.clone(),
+                    values: old,
+                });
 
                 println!("Stack state: {:?}", stack)
             };
 
             println!("Adding terminal: {terminal}");
 
-            stack.push(Expression::Terminal(terminal));
+            stack.push(StackValue::Terminal(terminal));
 
             println!("Stack state: {:?}", stack);
         }
 
         if stack.len() == 1
-            && let Some(Expression::NonTerminal(_)) = stack.first()
+            && let Some(StackValue::Terminal(_)) = stack.first()
         {
             Ok(())
         } else {
