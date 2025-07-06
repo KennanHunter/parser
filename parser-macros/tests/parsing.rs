@@ -1,47 +1,71 @@
-use parser_macros::expr;
+use parser_macros::{Expression, Grammar, NonTerminal, Parser, Terminal};
+use std::collections::HashMap;
 
 #[test]
 fn tests() {
-    let s = expr("1");
-    assert_eq!(s.to_string(), "1");
+    let mut rules = HashMap::new();
 
-    let s = expr("1 + 2 * 3");
-    assert_eq!(s.to_string(), "(+ 1 (* 2 3))");
-
-    let s = expr("a + b * c * d + e");
-    assert_eq!(s.to_string(), "(+ (+ a (* (* b c) d)) e)");
-
-    let s = expr("f . g . h");
-    assert_eq!(s.to_string(), "(. f (. g h))");
-
-    let s = expr(" 1 + 2 + f . g . h * 3 * 4");
-    assert_eq!(s.to_string(), "(+ (+ 1 2) (* (* (. f (. g h)) 3) 4))",);
-
-    let s = expr("--1 * 2");
-    assert_eq!(s.to_string(), "(* (- (- 1)) 2)");
-
-    let s = expr("--f . g");
-    assert_eq!(s.to_string(), "(- (- (. f g)))");
-
-    let s = expr("-9!");
-    assert_eq!(s.to_string(), "(- (! 9))");
-
-    let s = expr("f . g !");
-    assert_eq!(s.to_string(), "(! (. f g))");
-
-    let s = expr("(((0)))");
-    assert_eq!(s.to_string(), "0");
-
-    let s = expr("x[0][1]");
-    assert_eq!(s.to_string(), "([ ([ x 0) 1)");
-
-    let s = expr(
-        "a ? b :
-         c ? d
-         : e",
+    // Sum rules
+    rules.insert(
+        NonTerminal::Sum,
+        vec![vec![
+            Expression::NonTerminal(NonTerminal::Sum),
+            Expression::Terminal(Terminal::Plus),
+            Expression::NonTerminal(NonTerminal::Sub),
+        ]],
     );
-    assert_eq!(s.to_string(), "(? a b (? c d e))");
 
-    let s = expr("a = 0 ? b : c = d");
-    assert_eq!(s.to_string(), "(= a (= (? 0 b c) d))")
+    // Sub rules
+    rules.insert(
+        NonTerminal::Sub,
+        vec![vec![
+            Expression::NonTerminal(NonTerminal::Sub),
+            Expression::Terminal(Terminal::Minus),
+            Expression::NonTerminal(NonTerminal::Mult),
+        ]],
+    );
+
+    // Mult rules
+    rules.insert(
+        NonTerminal::Mult,
+        vec![vec![
+            Expression::NonTerminal(NonTerminal::Mult),
+            Expression::Terminal(Terminal::Star),
+            Expression::NonTerminal(NonTerminal::Atom),
+        ]],
+    );
+
+    // Atom rules
+    rules.insert(
+        NonTerminal::Atom,
+        vec![
+            vec![
+                Expression::Terminal(Terminal::LeftParen),
+                Expression::NonTerminal(NonTerminal::Sum),
+                Expression::Terminal(Terminal::RightParen),
+            ],
+            vec![Expression::NonTerminal(NonTerminal::Number)],
+        ],
+    );
+
+    // Number rules
+    rules.insert(
+        NonTerminal::Number,
+        vec![vec![Expression::Terminal(Terminal::Zero)]],
+    );
+
+    let g = Grammar {
+        starting_symbol: NonTerminal::Sum,
+        rules,
+    };
+
+    println!("{}", g);
+
+    let parser = Parser::new(g);
+
+    parser.parse("0 + 0 * 0").expect("Should be able to parse");
+
+    parser.parse("0 * 0 + 0").expect("Should be able to parse");
+
+    parser.parse("( 0 * 0 )").expect("Should be able to parse");
 }
